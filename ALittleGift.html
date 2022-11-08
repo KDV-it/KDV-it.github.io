@@ -1,0 +1,645 @@
+<!DOCTYPE html PUBLIC"-//W3C//DTD HTML 4.0 Transitional//EN">
+!
+<html>
+  <head>
+    <title>A Little Gift</title>
+    <meta name="Generator" content="EditPlus" />
+    <meta name="Author" content="" />
+    <meta name="Keywords" content="" />
+    <meta name="Description" content="" />
+    <meta charshet="utf-8" />
+    <script src="vara.min.js"></script>
+
+    <style>
+      html,
+      body {
+        height: 100%;
+        padding: 0;
+        margin: 0;
+        /* background: rgb(120, 222, 242); */
+        background-image: linear-gradient(to right, #bf7df9 , rgb(243, 163, 214), rgb(238, 139, 247));
+      }
+      canvas {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+      }
+      #container {
+        /* border: solid 1px #bf7df9; */
+        width: 50%;
+        margin: 20px auto;
+        min-height: 400;
+        margin-top: 8%;
+      }
+
+      p {
+        color: aliceblue;
+        size: 50px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div
+      style="
+        display: flex;
+        flex-direction: row;
+        justify-content: center;
+        align-items: center;
+        padding: 0 50px;
+      "
+    >
+      <div style="width: 35%; height: 323px; position: relative">
+        <canvas id="pinkboard" width="455" height="323"> </canvas>
+      </div>
+      <div id="container" style="z-index: 9999999"></div>
+      <a href="" class="hidden"></a>
+      <div style="width: 35%; height: 323px; position: relative">
+        <canvas id="pinkboard2" width="455" height="323"> </canvas>
+      </div>
+    </div>
+    <!-- <canvas id="pinkboard" width="1365" height="969"> </canvas> -->
+
+    <script>
+      var settings = {
+        particles: {
+          length: 260, // maximum amount of particles
+          duration: 1.5, // particle duration in sec
+          velocity: 14, // particle velocity in pixels/sec
+          effect: -0.95, // play with this for a nice effect
+          size: 25, // particle size in pixels
+        },
+      };
+
+      /*
+       * RequestAnimationFrame polyfill by Erik Möller
+       */
+      (function () {
+        var b = 0;
+        var c = ['ms', 'moz', 'webkit', 'o'];
+        for (var a = 0; a < c.length && !window.requestAnimationFrame; ++a) {
+          window.requestAnimationFrame = window[c[a] + 'RequestAnimationFrame'];
+          window.cancelAnimationFrame =
+            window[c[a] + 'CancelAnimationFrame'] ||
+            window[c[a] + 'CancelRequestAnimationFrame'];
+        }
+        if (!window.requestAnimationFrame) {
+          window.requestAnimationFrame = function (h, e) {
+            var d = new Date().getTime();
+            var f = Math.max(0, 16 - (d - b));
+            var g = window.setTimeout(function () {
+              h(d + f);
+            }, f);
+            b = d + f;
+            return g;
+          };
+        }
+        if (!window.cancelAnimationFrame) {
+          window.cancelAnimationFrame = function (d) {
+            clearTimeout(d);
+          };
+        }
+      })();
+
+      /*
+       * Point class
+       */
+      var Point = (function () {
+        function Point(x, y) {
+          this.x = typeof x !== 'undefined' ? x : 0;
+          this.y = typeof y !== 'undefined' ? y : 0;
+        }
+        Point.prototype.clone = function () {
+          return new Point(this.x, this.y);
+        };
+        Point.prototype.length = function (length) {
+          if (typeof length == 'undefined')
+            return Math.sqrt(this.x * this.x + this.y * this.y);
+          this.normalize();
+          this.x *= length;
+          this.y *= length;
+          return this;
+        };
+        Point.prototype.normalize = function () {
+          var length = this.length();
+          this.x /= length;
+          this.y /= length;
+          return this;
+        };
+        return Point;
+      })();
+
+      /*
+       * Particle class
+       */
+      var Particle = (function () {
+        function Particle() {
+          this.position = new Point();
+          this.velocity = new Point();
+          this.acceleration = new Point();
+          this.age = 0;
+        }
+        Particle.prototype.initialize = function (x, y, dx, dy) {
+          this.position.x = x;
+          this.position.y = y;
+          this.velocity.x = dx;
+          this.velocity.y = dy;
+          this.acceleration.x = dx * settings.particles.effect;
+          this.acceleration.y = dy * settings.particles.effect;
+          this.age = 0;
+        };
+        Particle.prototype.update = function (deltaTime) {
+          this.position.x += this.velocity.x * deltaTime;
+          this.position.y += this.velocity.y * deltaTime;
+          this.velocity.x += this.acceleration.x * deltaTime;
+          this.velocity.y += this.acceleration.y * deltaTime;
+          this.age += deltaTime;
+        };
+        Particle.prototype.draw = function (context, image) {
+          function ease(t) {
+            return --t * t * t + 1;
+          }
+          var size = image.width * ease(this.age / settings.particles.duration);
+          context.globalAlpha = 1 - this.age / settings.particles.duration;
+          context.drawImage(
+            image,
+            this.position.x - size / 2,
+            this.position.y - size / 2,
+            size,
+            size
+          );
+        };
+        return Particle;
+      })();
+
+      /*
+       * ParticlePool class
+       */
+      var ParticlePool = (function () {
+        var particles,
+          firstActive = 0,
+          firstFree = 0,
+          duration = settings.particles.duration;
+
+        function ParticlePool(length) {
+          // create and populate particle pool
+          particles = new Array(length);
+          for (var i = 0; i < particles.length; i++)
+            particles[i] = new Particle();
+        }
+        ParticlePool.prototype.add = function (x, y, dx, dy) {
+          particles[firstFree].initialize(x, y, dx, dy);
+
+          // handle circular queue
+          firstFree++;
+          if (firstFree == particles.length) firstFree = 0;
+          if (firstActive == firstFree) firstActive++;
+          if (firstActive == particles.length) firstActive = 0;
+        };
+        ParticlePool.prototype.update = function (deltaTime) {
+          var i;
+
+          // update active particles
+          if (firstActive < firstFree) {
+            for (i = firstActive; i < firstFree; i++)
+              particles[i].update(deltaTime);
+          }
+          if (firstFree < firstActive) {
+            for (i = firstActive; i < particles.length; i++)
+              particles[i].update(deltaTime);
+            for (i = 0; i < firstFree; i++) particles[i].update(deltaTime);
+          }
+
+          // remove inactive particles
+          while (
+            particles[firstActive].age >= duration &&
+            firstActive != firstFree
+          ) {
+            firstActive++;
+            if (firstActive == particles.length) firstActive = 0;
+          }
+        };
+        ParticlePool.prototype.draw = function (context, image) {
+          // draw active particles
+          if (firstActive < firstFree) {
+            for (i = firstActive; i < firstFree; i++)
+              particles[i].draw(context, image);
+          }
+          if (firstFree < firstActive) {
+            for (i = firstActive; i < particles.length; i++)
+              particles[i].draw(context, image);
+            for (i = 0; i < firstFree; i++) particles[i].draw(context, image);
+          }
+        };
+        return ParticlePool;
+      })();
+
+      /*
+       * Putting it all together
+       */
+      (function (canvas) {
+        var context = canvas.getContext('2d'),
+          particles = new ParticlePool(settings.particles.length),
+          particleRate =
+            settings.particles.length / settings.particles.duration, // particles/sec
+          time;
+
+        // get point on heart with -PI <= t <= PI
+        function pointOnHeart(t) {
+          return new Point(
+            160 * Math.pow(Math.sin(t), 3),
+            130 * Math.cos(t) -
+              50 * Math.cos(2 * t) -
+              20 * Math.cos(3 * t) -
+              10 * Math.cos(4 * t) +
+              25
+          );
+        }
+
+        // creating the particle image using a dummy canvas
+        var image = (function () {
+          var canvas = document.createElement('canvas'),
+            context = canvas.getContext('2d');
+          canvas.width = settings.particles.size;
+          canvas.height = settings.particles.size;
+          // helper function to create the path
+          function to(t) {
+            var point = pointOnHeart(t);
+            point.x =
+              settings.particles.size / 2 +
+              (point.x * settings.particles.size) / 350;
+            point.y =
+              settings.particles.size / 2 -
+              (point.y * settings.particles.size) / 350;
+            return point;
+          }
+          // create the path
+          context.beginPath();
+          var t = -Math.PI;
+          var point = to(t);
+          context.moveTo(point.x, point.y);
+          while (t < Math.PI) {
+            t += 0.01; // baby steps!
+            point = to(t);
+            context.lineTo(point.x, point.y);
+          }
+          context.closePath();
+          // create the fill
+          context.fillStyle = '#e24143'; //head color
+          context.fill();
+          // create the image
+          var image = new Image();
+          image.src = canvas.toDataURL();
+          return image;
+        })();
+
+        // render that thing!
+        function render() {
+          // next animation frame
+          requestAnimationFrame(render);
+
+          // update time
+          var newTime = new Date().getTime() / 1000,
+            deltaTime = newTime - (time || newTime);
+          time = newTime;
+
+          // clear canvas
+          context.clearRect(0, 0, canvas.width, canvas.height);
+
+          // create new particles
+          var amount = particleRate * deltaTime;
+          for (var i = 0; i < amount; i++) {
+            var pos = pointOnHeart(Math.PI - 2 * Math.PI * Math.random());
+            var dir = pos.clone().length(settings.particles.velocity);
+            particles.add(
+              canvas.width / 2 + pos.x,
+              canvas.height / 2 - pos.y,
+              dir.x,
+              -dir.y
+            );
+          }
+
+          // update and draw particles
+          particles.update(deltaTime);
+          particles.draw(context, image);
+        }
+
+        // handle (re-)sizing of the canvas
+        function onResize() {
+          canvas.width = canvas.clientWidth;
+          canvas.height = canvas.clientHeight;
+        }
+        window.onresize = onResize;
+
+        // delay rendering bootstrap
+        setTimeout(function () {
+          onResize();
+          render();
+        }, 10);
+      })(document.getElementById('pinkboard'));
+
+      //heard second
+      (function (canvas) {
+        var context = canvas.getContext('2d'),
+          particles = new ParticlePool(settings.particles.length),
+          particleRate =
+            settings.particles.length / settings.particles.duration, // particles/sec
+          time;
+
+        // get point on heart with -PI <= t <= PI
+        function pointOnHeart(t) {
+          return new Point(
+            160 * Math.pow(Math.sin(t), 3),
+            130 * Math.cos(t) -
+              50 * Math.cos(2 * t) -
+              20 * Math.cos(3 * t) -
+              10 * Math.cos(4 * t) +
+              25
+          );
+        }
+
+        // creating the particle image using a dummy canvas
+        var image = (function () {
+          var canvas = document.createElement('canvas'),
+            context = canvas.getContext('2d');
+          canvas.width = settings.particles.size;
+          canvas.height = settings.particles.size;
+          // helper function to create the path
+          function to(t) {
+            var point = pointOnHeart(t);
+            point.x =
+              settings.particles.size / 2 +
+              (point.x * settings.particles.size) / 350;
+            point.y =
+              settings.particles.size / 2 -
+              (point.y * settings.particles.size) / 350;
+            return point;
+          }
+          // create the path
+          context.beginPath();
+          var t = -Math.PI;
+          var point = to(t);
+          context.moveTo(point.x, point.y);
+          while (t < Math.PI) {
+            t += 0.01; // baby steps!
+            point = to(t);
+            context.lineTo(point.x, point.y);
+          }
+          context.closePath();
+          // create the fill
+          context.fillStyle = '#e24143';
+          context.fill();
+          // create the image
+          var image = new Image();
+          image.src = canvas.toDataURL();
+          return image;
+        })();
+
+        // render that thing!
+        function render() {
+          // next animation frame
+          requestAnimationFrame(render);
+
+          // update time
+          var newTime = new Date().getTime() / 1000,
+            deltaTime = newTime - (time || newTime);
+          time = newTime;
+
+          // clear canvas
+          context.clearRect(0, 0, canvas.width, canvas.height);
+
+          // create new particles
+          var amount = particleRate * deltaTime;
+          for (var i = 0; i < amount; i++) {
+            var pos = pointOnHeart(Math.PI - 2 * Math.PI * Math.random());
+            var dir = pos.clone().length(settings.particles.velocity);
+            particles.add(
+              canvas.width / 2 + pos.x,
+              canvas.height / 2 - pos.y,
+              dir.x,
+              -dir.y
+            );
+          }
+
+          // update and draw particles
+          particles.update(deltaTime);
+          particles.draw(context, image);
+        }
+
+        // handle (re-)sizing of the canvas
+        function onResize() {
+          canvas.width = canvas.clientWidth;
+          canvas.height = canvas.clientHeight;
+        }
+        window.onresize = onResize;
+
+        // delay rendering bootstrap
+        setTimeout(function () {
+          onResize();
+          render();
+        }, 10);
+      })(document.getElementById('pinkboard2'));
+    </script>
+
+    <!-- add name to handwrite -->
+
+    <script>
+      var fontSize = 70;
+      // if (window.screen.width > 700) fontSize = 32;
+      // else if (window.screen.width < 1200) fontSize = 57;
+      var vara = new Vara(
+        '#container',
+        'https://raw.githubusercontent.com/akzhy/Vara/master/fonts/Satisfy/SatisfySL.json',
+        [
+          {
+            text: 'Hello my Lover',
+            y: 150,
+            fromCurrentPosition: { y: false },
+            duration: 3000,
+            autoAnimation: true
+          },
+
+          {
+            text: 'My Hoa',
+            y: 150,
+            fromCurrentPosition: { y: false },
+            duration: 3000,
+            delay: 3000,
+            autoAnimation: true
+          },
+          {
+            text: 'This is a little gift',
+            y: 150,
+            fromCurrentPosition: { y: false },
+            duration: 3000,
+            delay: 3000,
+            autoAnimation: true
+          },
+          {
+            text: "Just for fun",
+            y: 150,
+            fromCurrentPosition: { y: false },
+            duration: 3000,
+            delay: 3000,
+            autoAnimation: true
+          },
+          {
+            text: "And it's for you",
+            y: 150,
+            fromCurrentPosition: { y: false },
+            duration: 3000,
+            delay: 3000,
+            autoAnimation: true
+          },
+        ],
+        {
+          strokeWidth: 3,
+          color: '#fff',
+          fontSize: fontSize,
+          textAlign: 'center',
+        }
+      );
+
+        vara.ready(function () {
+          var erase = true;
+          vara.animationEnd(function (i, o) {
+            if (i == 'no-erase') erase = false;
+            if (erase) {
+              o.container.style.transition = 'opacity 1s 1s';
+              o.container.style.opacity = 0;
+            }
+          })
+          // vara.animationEnd(function (i, o) {
+          //   if (i == 'no-erase') erase = false;
+          //   if (erase) {
+          //     o.container.style.transition = 'opacity 1s 1s';
+          //     o.container.style.opacity = 0;
+          //   }
+          // });
+        })
+      
+      // setTimeout(function () {
+      //   window.location.reload(1);
+      // }, 5000);
+    </script>
+    <!-- <div
+      style="
+        text-align: right;
+        position: fixed;
+        z-index: 9999999;
+        bottom: 0;
+        width: auto;
+        right: 1%;
+        cursor: pointer;
+        line-height: 0;
+        display: block !important;
+      "
+    >
+      <a
+        title="Hosted on free web hosting 000webhost.com. Host your own website for FREE."
+        target="_blank"
+        href="https://www.000webhost.com/?utm_source=000webhostapp&amp;utm_campaign=000_logo&amp;utm_medium=website&amp;utm_content=footer_img"
+        ><img
+          src="https://cdn.000webhost.com/000webhost/logo/footer-powered-by-000webhost-white2.png"
+          alt="www.000webhost.com"
+      /></a>
+    </div> -->
+    <script>
+      function getCookie(t) {
+        for (
+          var e = t + '=',
+            n = decodeURIComponent(document.cookie).split(';'),
+            o = 0;
+          o < n.length;
+          o++
+        ) {
+          for (var i = n[o]; ' ' == i.charAt(0); ) i = i.substring(1);
+          if (0 == i.indexOf(e)) return i.substring(e.length, i.length);
+        }
+        return '';
+      }
+      getCookie('hostinger') &&
+        ((document.cookie =
+          'hostinger=;expires=Thu, 01 Jan 1970 00:00:01 GMT;'),
+        location.reload());
+      var wordpressAdminBody = document.getElementsByClassName('wp-admin')[0],
+        notification = document.getElementsByClassName(
+          'notice notice-success is-dismissible'
+        ),
+        hostingerLogo = document.getElementsByClassName('hlogo'),
+        mainContent = document.getElementsByClassName('notice_content')[0];
+      if (
+        null != wordpressAdminBody &&
+        0 < notification.length &&
+        null != mainContent
+      ) {
+        var googleFont = document.createElement('link');
+        (googleFontHref = document.createAttribute('href')),
+          (googleFontRel = document.createAttribute('rel')),
+          (googleFontHref.value =
+            'https://fonts.googleapis.com/css?family=Roboto:300,400,600,700'),
+          (googleFontRel.value = 'stylesheet'),
+          googleFont.setAttributeNode(googleFontHref),
+          googleFont.setAttributeNode(googleFontRel);
+        var css =
+            "@media only screen and (max-width: 576px) {#main_content {max-width: 320px !important;} #main_content h1 {font-size: 30px !important;} #main_content h2 {font-size: 40px !important; margin: 20px 0 !important;} #main_content p {font-size: 14px !important;} #main_content .content-wrapper {text-align: center !important;}} @media only screen and (max-width: 781px) {#main_content {margin: auto; justify-content: center; max-width: 445px;}} @media only screen and (max-width: 1325px) {.web-hosting-90-off-image-wrapper {position: absolute; max-width: 95% !important;} .notice_content {justify-content: center;} .web-hosting-90-off-image {opacity: 1;}} @media only screen and (min-width: 769px) {.notice_content {justify-content: space-between;} #main_content {margin-left: 5%; max-width: 445px;} .web-hosting-90-off-image-wrapper {position: absolute; display: flex; justify-content: center; width: 50%; margin-left: 45%;}} .web-hosting-90-off-image {max-width: 90%;} .content-wrapper {min-height: 454px; display: flex; flex-direction: column; justify-content: center; z-index: 5} .notice_content {display: flex; align-items: center;} * {-webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;} .upgrade_button_red_sale{box-shadow: 0 2px 4px 0 rgba(255, 69, 70, 0.2); width: 264px; border: 0; border-radius: 3px; background-color: #FF5C62 !important; padding: 15px 55px !important; font-family: 'Roboto', sans-serif; font-size: 16px; font-weight: 600; color: #ffffff;} .upgrade_button_red_sale:hover{color: #ffffff !important; background: #d10303 !important;}",
+          style = document.createElement('style'),
+          sheet = window.document.styleSheets[0];
+        style.styleSheet
+          ? (style.styleSheet.cssText = css)
+          : style.appendChild(document.createTextNode(css)),
+          document.getElementsByTagName('head')[0].appendChild(style),
+          document.getElementsByTagName('head')[0].appendChild(googleFont);
+        var button = document.getElementsByClassName('upgrade_button_red')[0],
+          link = button.parentElement;
+        link.setAttribute(
+          'href',
+          'https://www.hostinger.com/hosting-starter-offer?utm_source=000webhost&utm_medium=panel&utm_campaign=000-wp'
+        ),
+          (link.innerHTML =
+            '<button class="upgrade_button_red_sale">Claim Deal</button>'),
+          (notification = notification[0]).setAttribute(
+            'style',
+            'padding-bottom: 0; padding-top: 5px; background-color: #040713; background-size: cover; background-repeat: no-repeat; color: #ffffff; border-left-color: #040713;'
+          ),
+          (notification.className = 'notice notice-error is-dismissible');
+        var mainContentHolder = document.getElementById('main_content');
+        mainContentHolder.setAttribute('style', 'padding: 0;'),
+          hostingerLogo[0].remove();
+        var h1Tag = notification.getElementsByTagName('H1')[0];
+        (h1Tag.className = '000-h1'),
+          (h1Tag.innerHTML = 'Black Friday'),
+          h1Tag.setAttribute(
+            'style',
+            'color: white; font-family: "Roboto", sans-serif; font-size: 48px; font-weight: 700;'
+          );
+        var h2Tag = document.createElement('H2');
+        (h2Tag.innerHTML =
+          'Up to 90% off 4-year hosting plans + free domain, SSL & DDoS protection'),
+          h2Tag.setAttribute(
+            'style',
+            'color: white; margin: 10px 0 15px 0; font-family: "Roboto", sans-serif; font-size: 16px; font-weight: 400; line-height: 1;'
+          ),
+          h1Tag.parentNode.insertBefore(h2Tag, h1Tag.nextSibling);
+        var paragraph = notification.getElementsByTagName('p')[0];
+        (paragraph.innerHTML =
+          "$<span style='font-size: 80px;'>2.49</span>/mo"),
+          paragraph.setAttribute(
+            'style',
+            'font-family: "Roboto", sans-serif; font-size: 48px; font-weight: 700; margin: 0;'
+          );
+        var list = notification.getElementsByTagName('UL')[0];
+        list.remove();
+        var org_html = mainContent.innerHTML,
+          new_html =
+            '<div class="content-wrapper">' +
+            mainContent.innerHTML +
+            '</div><div class="web-hosting-90-off-image-wrapper"><img class="web-hosting-90-off-image" src="https://cdn.000webhost.com/000webhost/promotions/bf-2022-bottom-banner.png"></div>';
+        mainContent.innerHTML = new_html;
+        var saleImage = mainContent.getElementsByClassName(
+          'web-hosting-90-off-image'
+        )[0];
+      }
+    </script>
+  </body>
+</html>
